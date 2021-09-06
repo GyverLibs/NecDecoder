@@ -17,8 +17,9 @@ void irIsr() {
 
 void loop() {
   // если пакет успешно принят
-  if (ir.available()) {
+  if (ir.available()) {      
     // выводим весь пакет (32 бита)
+    Serial.print("0x");
     Serial.println(ir.readPacket(), HEX);
 
     // можно вывести только команду (8 бит)
