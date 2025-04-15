@@ -6,6 +6,9 @@
 
 [![Foo](https://img.shields.io/badge/ПОДПИСАТЬСЯ-НА%20ОБНОВЛЕНИЯ-brightgreen.svg?style=social&logo=telegram&color=blue)](https://t.me/GyverLibs)
 
+> [!NOTE]
+> **Для передачи по ИК кастомных данных используйте библиотеку [GyverWire](https://github.com/GyverLibs/GyverWire)**
+
 # NecDecoder
 Лёгкая библиотека для декодирования ИК протокола NEC (китайские пульты)
 - Библиотека не забирает никакие прерывания
