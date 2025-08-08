@@ -17,11 +17,17 @@
 
 // class
 class NecDecoder {
-    enum State : uint8_t {
+    enum ParseState : uint8_t {
         NEC_start = 0,
         NEC_end = 32,
         NEC_repeat = 33 + NEC_SKIP_REPEATS,
         NEC_idle,
+    };
+    enum class ReadyState : uint8_t {
+        Idle,
+        Read,
+        Available,
+        Repeat,
     };
 
    public:
@@ -34,23 +40,26 @@ class NecDecoder {
         switch (pulse) {
             // START
             case ((_NEC_START_REPEAT + _NEC_START_DATA) / 2 + 1)...(_NEC_START_DATA + _NEC_FRAME_TOL):
-                _state = NEC_start;
+                _parse = ParseState::NEC_start;
                 return;
 
             // WAIT REPEAT
             case (_NEC_WAIT_REP1 - _NEC_FRAME_TOL)...(_NEC_WAIT_REP1 + _NEC_FRAME_TOL):
             case (_NEC_WAIT_REP2 - _NEC_FRAME_TOL)...(_NEC_WAIT_REP2 + _NEC_FRAME_TOL):
-                if (_state >= NEC_end) return;
+                if (_parse >= ParseState::NEC_end) return;
                 break;
 
             // REPEAT
             case (_NEC_START_REPEAT - _NEC_FRAME_TOL)...(_NEC_START_REPEAT + _NEC_START_DATA) / 2:
-                switch (_state) {
-                    case NEC_end ... NEC_repeat - 1:
-                        ++_state;
+                _ready = ReadyState::Repeat;
+
+                switch (_parse) {
+                    case ParseState::NEC_end... ParseState::NEC_repeat - 1:
+                        ++_parse;
                         return;
-                    case NEC_repeat:
-                        _ready = true;
+
+                    case ParseState::NEC_repeat:
+                        _ready = ReadyState::Available;
                         return;
                 }
                 break;
@@ -59,31 +68,43 @@ class NecDecoder {
             case (_NEC_HIGH - _NEC_BIT_TOL)...(_NEC_HIGH + _NEC_BIT_TOL):
                 bit = 1;
             case (_NEC_LOW - _NEC_BIT_TOL)...(_NEC_LOW + _NEC_BIT_TOL):
-                if (_state < NEC_end) {
+                if (_parse < ParseState::NEC_end) {
                     _buf = (_buf << 1) | bit;
-                    if (++_state == NEC_end) {
+                    if (++_parse == ParseState::NEC_end) {
                         if (!(((_buf >> 8) & _buf) & 0xFF00FF)) {
                             _data = ((_buf >> 16) & 0xff00) | ((_buf >> 8) & 0xff);
-                            _ready = true;
+                            _ready = ReadyState::Available;
                         } else {
-                            _state = NEC_idle;
+                            _parse = ParseState::NEC_idle;
                         }
                     }
                     return;
                 }
                 break;
         }
-        _state = NEC_idle;
+        _parse = ParseState::NEC_idle;
     }
 
     // Есть данные для чтения (новые или повтор)
-    bool available() {
-        return _ready ? _ready = false, true : false;
+    // anyRepeat - если false, то игнорируется повтор при сбое последнего чтения
+    bool available(bool anyRepeat = false) {
+        switch (_ready) {
+            case ReadyState::Available:
+                _ready = ReadyState::Read;
+                return true;
+
+            case ReadyState::Repeat:
+                _ready = anyRepeat ? ReadyState::Read : ReadyState::Idle;
+                return anyRepeat;
+
+            default: break;
+        }
+        return false;
     }
 
     // Возвращает true, если принят флаг повтора команды
     bool isRepeated() {
-        return _state == NEC_repeat;
+        return _parse == ParseState::NEC_repeat;
     }
 
     // Прочитать данные (адрес + команда)
@@ -108,16 +129,14 @@ class NecDecoder {
 
     // таймаут после последнего сигнала с пульта. Сработает однократно
     bool timeout(uint16_t ms) {
-        switch (_state) {
-            case NEC_end ... NEC_repeat:
-                noInterrupts();
-                uint32_t t = _tmr;
-                interrupts();
-                if (micros() - t >= ms * 1000ul) {
-                    _state = NEC_idle;
-                    return true;
-                }
-                break;
+        if (_ready == ReadyState::Read) {
+            noInterrupts();
+            uint32_t t = _tmr;
+            interrupts();
+            if (micros() - t >= ms * 1000ul) {
+                _ready = ReadyState::Idle;
+                return true;
+            }
         }
         return false;
     }
@@ -126,6 +145,6 @@ class NecDecoder {
     uint32_t _tmr = 0;
     uint32_t _buf = 0;
     uint16_t _data = 0;
-    uint8_t _state = NEC_idle;
-    bool _ready = false;
+    uint8_t _parse = ParseState::NEC_idle;
+    ReadyState _ready = ReadyState::Idle;
 };

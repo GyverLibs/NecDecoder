@@ -36,7 +36,8 @@
 void tick();
 
 // Есть данные для чтения (новые или повтор)
-bool available();
+// anyRepeat - если false, то игнорируется повтор при сбое последнего чтения
+bool available(bool anyRepeat = false);
 
 // Возвращает true, если принят флаг повтора команды
 bool isRepeated();
