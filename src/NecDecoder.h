@@ -5,7 +5,10 @@
 
 #define _NEC_BIT_TOL 150ul     // допуск бита
 #define _NEC_FRAME_TOL 1500ul  // допуск фрейма
-#define _NEC_SKIP_REPEATS 3    // пропуск повторов
+
+#ifndef NEC_SKIP_REPEATS
+#define NEC_SKIP_REPEATS 3  // пропуск повторов
+#endif
 
 #define _NEC_START_DATA (_NEC_START + _NEC_DATA)
 #define _NEC_START_REPEAT (_NEC_START + _NEC_REPEAT)
@@ -17,7 +20,7 @@ class NecDecoder {
     enum State : uint8_t {
         NEC_start = 0,
         NEC_end = 32,
-        NEC_repeat = 33 + _NEC_SKIP_REPEATS,
+        NEC_repeat = 33 + NEC_SKIP_REPEATS,
         NEC_idle,
     };
 
@@ -101,6 +104,22 @@ class NecDecoder {
     // Прочитать весь пакет NEC
     uint32_t readPacket() {
         return (uint32_t(_data & 0xff00) << 16) | (uint32_t(~_data & 0xff00) << 8) | ((_data & 0xff) << 8) | (~_data & 0xff);
+    }
+
+    // таймаут после последнего сигнала с пульта. Сработает однократно
+    bool timeout(uint16_t ms) {
+        switch (_state) {
+            case NEC_end ... NEC_repeat:
+                noInterrupts();
+                uint32_t t = _tmr;
+                interrupts();
+                if (micros() - t >= ms * 1000ul) {
+                    _state = NEC_idle;
+                    return true;
+                }
+                break;
+        }
+        return false;
     }
 
    private:
