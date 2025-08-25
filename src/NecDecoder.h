@@ -142,9 +142,9 @@ class NecDecoder {
     }
 
    private:
-    uint32_t _tmr = 0;
+    volatile uint32_t _tmr = 0;
     uint32_t _buf = 0;
-    uint16_t _data = 0;
-    uint8_t _parse = ParseState::NEC_idle;
-    ReadyState _ready = ReadyState::Idle;
+    volatile uint16_t _data = 0;
+    volatile uint8_t _parse = ParseState::NEC_idle;
+    volatile ReadyState _ready = ReadyState::Idle;
 };
