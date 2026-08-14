@@ -40,8 +40,8 @@ class NecEncoder {
         int i = 8;
         while (i--) {
             _pulse38(pin, _NEC_BIT);
-            delayMicroseconds((data & (1 << 7)) ? (_NEC_HIGH - _NEC_BIT) : _NEC_BIT);
-            data <<= 1;
+            delayMicroseconds((data & 1) ? (_NEC_HIGH - _NEC_BIT) : _NEC_BIT);
+            data >>= 1;
         }
     }
 

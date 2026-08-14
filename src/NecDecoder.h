@@ -20,7 +20,7 @@ class NecDecoder {
     enum ParseState : uint8_t {
         NEC_start = 0,
         NEC_end = 32,
-        NEC_repeat = 33 + NEC_SKIP_REPEATS,
+        NEC_repeat = NEC_end + NEC_SKIP_REPEATS,
         NEC_idle,
     };
     enum class ReadyState : uint8_t {
@@ -41,6 +41,7 @@ class NecDecoder {
             // START
             case ((_NEC_START_REPEAT + _NEC_START_DATA) / 2 + 1)...(_NEC_START_DATA + _NEC_FRAME_TOL):
                 _parse = ParseState::NEC_start;
+                _buf = 0;
                 return;
 
             // WAIT REPEAT
@@ -52,15 +53,15 @@ class NecDecoder {
             // REPEAT
             case (_NEC_START_REPEAT - _NEC_FRAME_TOL)...(_NEC_START_REPEAT + _NEC_START_DATA) / 2:
                 _ready = ReadyState::Repeat;
+                _repeated = true;
 
-                switch (_parse) {
-                    case ParseState::NEC_end... ParseState::NEC_repeat - 1:
-                        ++_parse;
-                        return;
-
-                    case ParseState::NEC_repeat:
-                        _ready = ReadyState::Available;
-                        return;
+                if (_parse >= ParseState::NEC_end && _parse < ParseState::NEC_repeat) {
+                    ++_parse;
+                    return;
+                }
+                if (_parse == ParseState::NEC_repeat) {
+                    _ready = ReadyState::Available;
+                    return;
                 }
                 break;
 
@@ -69,10 +70,16 @@ class NecDecoder {
                 bit = 1;
             case (_NEC_LOW - _NEC_BIT_TOL)...(_NEC_LOW + _NEC_BIT_TOL):
                 if (_parse < ParseState::NEC_end) {
-                    _buf = (_buf << 1) | bit;
+                    if (bit) _buf |= 1ul << _parse;
                     if (++_parse == ParseState::NEC_end) {
-                        if (!(((_buf >> 8) & _buf) & 0xFF00FF)) {
-                            _data = ((_buf >> 16) & 0xff00) | ((_buf >> 8) & 0xff);
+                        uint8_t address = _buf;
+                        uint8_t addressInv = _buf >> 8;
+                        uint8_t command = _buf >> 16;
+                        uint8_t commandInv = _buf >> 24;
+                        if (uint8_t(address ^ addressInv) == 0xff &&
+                            uint8_t(command ^ commandInv) == 0xff) {
+                            _data = (uint16_t(address) << 8) | command;
+                            _repeated = false;
                             _ready = ReadyState::Available;
                         } else {
                             _parse = ParseState::NEC_idle;
@@ -104,27 +111,28 @@ class NecDecoder {
 
     // Возвращает true, если принят флаг повтора команды
     bool isRepeated() {
-        return _parse == ParseState::NEC_repeat;
+        return _repeated;
     }
 
     // Прочитать данные (адрес + команда)
     uint16_t readData() {
-        return _data;
+        return _readData();
     }
 
     // Прочитать адрес
     uint8_t readAddress() {
-        return _data >> 8;
+        return _readData() >> 8;
     }
 
     // Прочитать команду
     uint8_t readCommand() {
-        return _data;
+        return _readData();
     }
 
     // Прочитать весь пакет NEC
     uint32_t readPacket() {
-        return (uint32_t(_data & 0xff00) << 16) | (uint32_t(~_data & 0xff00) << 8) | ((_data & 0xff) << 8) | (~_data & 0xff);
+        uint16_t data = _readData();
+        return (uint32_t(data & 0xff00) << 16) | (uint32_t(~data & 0xff00) << 8) | ((data & 0xff) << 8) | (~data & 0xff);
     }
 
     // таймаут после последнего сигнала с пульта. Сработает однократно
@@ -147,4 +155,17 @@ class NecDecoder {
     volatile uint16_t _data = 0;
     volatile uint8_t _parse = ParseState::NEC_idle;
     volatile ReadyState _ready = ReadyState::Idle;
+    volatile bool _repeated = false;
+
+    uint16_t _readData() {
+#ifdef __AVR__
+        uint8_t sreg = SREG;
+        cli();
+        uint16_t data = _data;
+        SREG = sreg;
+        return data;
+#else
+        return _data;
+#endif
+    }
 };
